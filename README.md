@@ -96,24 +96,9 @@ Use two test accounts and keep testing on your own local copy.
 6. Inspect `instance/app.sqlite3`: `users.password_hash` should be a hash and should not match the password you entered.
 7. Log out and revisit `/dashboard`; the app should require login again.
 
-## Publish the source on GitHub
 
-Create an empty GitHub repository (for example, `secure-file-sharing-app`) without adding a README, then run these commands from PowerShell in this folder. Replace `YOUR_GITHUB_USERNAME` with your GitHub username:
-
-```powershell
-cd D:\Cyber-Security-Projects\Secure-File-Sharing-App
-git init
-git add .
-git status
-git commit -m "Build secure file sharing app"
-git branch -M main
-git remote add origin https://github.com/YOUR_GITHUB_USERNAME/secure-file-sharing-app.git
-git push -u origin main
 ```
 
-Review `git status` before committing. `.gitignore` excludes the virtual environment, SQLite database, uploaded content, `.env`, and local secret key. Do not force-add those files. After pushing, open the repository on GitHub and use **Pin** or **Customize your pins** on your profile to feature it. You can also add its link to a portfolio Projects section with the project description and screenshots.
-
-GitHub stores and displays the source; **GitHub Pages cannot run this Flask backend**. A public live demo needs a separate Python hosting service, HTTPS, production server configuration, secret management, and persistent private storage. Do not deploy this current learning version as-is.
 
 ## Limitations and next steps
 
