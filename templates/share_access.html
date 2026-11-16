@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Shared File // SecureShare{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="auth-card">
+    <div class="auth-header">
+      <div class="auth-eyebrow">SHARED FILE // {{ share['category_tag'] }}</div>
+      <h1 class="auth-title">{{ share['original_name'] }}</h1>
+      <p class="panel-subtitle" style="margin-top: 0.35rem;">
+        Shared by <strong>{{ share['owner_username'] }}</strong> &bull; {{ share['size']|human_size }}
+      </p>
+    </div>
+
+    <div class="hud-panel" style="padding: 0.9rem; margin-bottom: 1.2rem; background: var(--bg-subtle);">
+      <div class="file-meta-mono" style="word-break: break-all;">
+        <div><strong>SHA-256 Checksum:</strong> {{ share['sha256_hash'] or 'Verified on download' }}</div>
+        <div style="margin-top: 0.35rem;">
+          <strong>Downloads:</strong> {{ share['download_count'] }}{% if share['max_downloads'] > 0 %} / {{ share['max_downloads'] }}{% else %} (Unlimited){% endif %}
+        </div>
+        {% if share['expires_at'] %}
+          <div style="margin-top: 0.35rem;">
+            <strong>Expires:</strong> {{ share['expires_at'][:19].replace('T', ' ') }} UTC
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if expired %}
+      <div class="flash-banner error">
+        <span>This share link has expired.</span>
+      </div>
+    {% elif limit_reached %}
+      <div class="flash-banner error">
+        <span>The maximum download limit for this share link has been reached.</span>
+      </div>
+    {% else %}
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        {% if share['passcode_hash'] %}
+          <div class="form-group">
+            <label class="form-label" for="passcode">Passcode Required</label>
+            <input class="form-input" type="password" id="passcode" name="passcode" required autofocus placeholder="Enter share passcode">
+          </div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary btn-full">
+          Verify &amp; Download File
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

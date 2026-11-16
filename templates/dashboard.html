@@ -1,0 +1,718 @@
+{% extends "base.html" %}
+{% block title %}Dashboard // SecureShare{% endblock %}
+
+{% block content %}
+<!-- Live Real-Time Sync Banner -->
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1rem; flex-wrap:wrap; gap:0.5rem;">
+  <div style="display:inline-flex; align-items:center; gap:0.5rem; font-size:0.8rem; color:var(--text-secondary);">
+    <span class="pulse-dot" id="live-sync-dot"></span>
+    <span>Live Auto-Sync Active &bull; New uploads &amp; shared files appear automatically without refreshing</span>
+  </div>
+  <div class="file-meta-mono" id="live-sync-clock">Synced just now</div>
+</div>
+
+<div id="live-toast-container" class="flash-stack" style="display:none;"></div>
+
+<!-- Top Summary Metrics -->
+<section class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Encrypted Files</div>
+    <div class="kpi-value"><span id="kpi-files-count">{{ files|length }}</span> <span class="panel-subtitle">files</span></div>
+    <div class="kpi-sub">AES-256-GCM encrypted at rest</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-label">Storage Used</div>
+    <div class="kpi-value">
+      <span id="kpi-used-human">{{ used_bytes|human_size }}</span>
+      <span class="panel-subtitle">/ <span id="kpi-quota-human">{{ quota_bytes|human_size }}</span></span>
+    </div>
+    <div class="quota-bar-track">
+      <div class="quota-bar-fill" id="kpi-quota-bar" style="width: {{ quota_pct }}%;"></div>
+    </div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-label">Active Shares</div>
+    <div class="kpi-value"><span id="kpi-my-shares-count">{{ my_shares|length }}</span> <span class="panel-subtitle">shared</span></div>
+    <div class="kpi-sub">User grants &amp; expiring links</div>
+  </div>
+
+  <div class="kpi-card">
+    <div class="kpi-label">Shared With Me</div>
+    <div class="kpi-value"><span id="kpi-shared-with-me-count">{{ shared_with_me|length }}</span> <span class="panel-subtitle">files</span></div>
+    <div class="kpi-sub">Auto-updates on incoming shares</div>
+  </div>
+</section>
+
+<div class="dashboard-grid">
+  <!-- LEFT COLUMN: UPLOAD & ACTIVE SHARES -->
+  <div>
+    <section class="hud-panel">
+      <div class="panel-header">
+        <div class="panel-title">Upload &amp; Encrypt File</div>
+        <span class="badge badge-INTERNAL">Max {{ max_mb }} MB</span>
+      </div>
+
+      <form action="{{ url_for('upload') }}" method="post" enctype="multipart/form-data" id="upload-form">
+        <input type="hidden" name="csrf_token" id="global-csrf-token" value="{{ csrf_token() }}">
+
+        <label class="dropzone" id="dropzone" for="file-input">
+          <div class="dropzone-icon">&uarr; Choose or Drop File</div>
+          <div class="dropzone-title">Drag and drop a file here, or click to browse</div>
+          <div class="dropzone-hint">Supported: {{ allowed }}</div>
+          <div id="selected-filename" class="selected-file-pill" style="display:none;"></div>
+          <input type="file" id="file-input" name="file" required>
+        </label>
+
+        <div class="form-group">
+          <label class="form-label" for="category_tag">Access Classification</label>
+          <select class="form-select" id="category_tag" name="category_tag">
+            <option value="CONFIDENTIAL" selected>Confidential (Default)</option>
+            <option value="RESTRICTED">Restricted</option>
+            <option value="INTERNAL">Internal</option>
+            <option value="PUBLIC">Public</option>
+          </select>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-full" id="upload-submit-btn">
+          Encrypt &amp; Upload File
+        </button>
+      </form>
+    </section>
+
+    <!-- ACTIVE OUTBOUND SHARE GRANTS -->
+    <section class="hud-panel">
+      <div class="panel-header">
+        <div class="panel-title">Active Shared Links &amp; Grants</div>
+        <span class="file-meta-mono" id="outbound-shares-badge">{{ my_shares|length }} active</span>
+      </div>
+
+      <div id="my-shares-container">
+        {% if my_shares %}
+          <div class="audit-feed">
+            {% for s in my_shares %}
+              <div class="audit-item sev-SUCCESS" style="flex-direction: column; gap: 0.4rem;">
+                <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                  <strong style="color:var(--text-primary);">{{ s['original_name'] }}</strong>
+                  <form action="{{ url_for('revoke_share', share_id=s['id']) }}" method="post" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
+                  </form>
+                </div>
+                <div class="file-meta-mono">
+                  {% if s['recipient_username'] %}
+                    Shared with: <strong style="color:var(--accent);">{{ s['recipient_username'] }}</strong>
+                  {% else %}
+                    Link: <a href="{{ url_for('access_share_link', token=s['share_token'], _external=True) }}" target="_blank">/s/{{ s['share_token'][:10] }}&hellip;</a>
+                    {% if s['passcode_hash'] %}<span class="badge badge-CONFIDENTIAL">Passcode</span>{% endif %}
+                  {% endif %}
+                  &bull; Downloads: {{ s['download_count'] }}{% if s['max_downloads'] > 0 %}/{{ s['max_downloads'] }}{% endif %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty-state">
+            No active shares yet. Click "Share" on any uploaded file to share with another user or generate an expiring link.
+          </div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <!-- RIGHT COLUMN: MY FILES, SHARED WITH ME & ACTIVITY LOG -->
+  <div>
+    <section class="hud-panel">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">My Encrypted Files</div>
+          <div class="panel-subtitle">Files are encrypted with AES-256-GCM and checked against their SHA-256 hash on download.</div>
+        </div>
+      </div>
+
+      <form method="get" action="{{ url_for('dashboard') }}" class="filter-bar">
+        <input class="form-input" type="search" id="search-input" name="q" value="{{ search_query }}" placeholder="Search by filename or SHA-256 hash...">
+        <select class="form-select" id="tag-select" name="tag">
+          <option value="">All Classifications</option>
+          {% for t in ['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED'] %}
+            <option value="{{ t }}" {% if tag_filter == t %}selected{% endif %}>{{ t|title }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-outline">Filter</button>
+        {% if search_query or tag_filter %}
+          <a href="{{ url_for('dashboard') }}" class="btn btn-danger btn-sm">Clear</a>
+        {% endif %}
+      </form>
+
+      <div id="my-files-container">
+        {% if files %}
+          <div class="table-wrap">
+            <table class="hud-table">
+              <thead>
+                <tr>
+                  <th>File Name</th>
+                  <th>Classification</th>
+                  <th>Size</th>
+                  <th>SHA-256 Checksum</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="my-files-tbody">
+                {% for f in files %}
+                  <tr>
+                    <td>
+                      <div class="file-title-cell">
+                        <span class="file-name">{{ f['original_name'] }}</span>
+                        <span class="file-meta-mono">
+                          {{ f['uploaded_at'][:19].replace('T', ' ') }} UTC &bull; {{ f['download_count'] }} downloads
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span class="badge badge-{{ f['category_tag'] }}">{{ f['category_tag'] }}</span>
+                    </td>
+                    <td class="file-meta-mono">{{ f['size']|human_size }}</td>
+                    <td>
+                      {% if f['sha256_hash'] %}
+                        <span class="hash-chip" title="Click to copy full SHA-256: {{ f['sha256_hash'] }}" onclick="copyHash('{{ f['sha256_hash'] }}', this)">
+                          {{ f['sha256_hash'][:12] }}&hellip; Copy
+                        </span>
+                      {% else %}
+                        <span class="file-meta-mono">Unindexed</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <div class="action-cluster">
+                        <a href="{{ url_for('download', file_id=f['id']) }}" class="btn btn-outline btn-sm">Download</a>
+
+                        <form action="{{ url_for('verify_integrity', file_id=f['id']) }}" method="post" style="display:inline;">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <button type="submit" class="btn btn-emerald btn-sm" title="Verify AES-GCM tag &amp; SHA-256 checksum">Verify</button>
+                        </form>
+
+                        <button type="button" class="btn btn-outline btn-sm" onclick="toggleShareDrawer('share-drawer-{{ f['id'] }}')">
+                          Share
+                        </button>
+
+                        <form action="{{ url_for('delete_file', file_id=f['id']) }}" method="post" style="display:inline;" onsubmit="return confirm('Delete {{ f['original_name'] }} permanently?');">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                        </form>
+                      </div>
+
+                      <!-- Collapsible Share Drawer -->
+                      <div id="share-drawer-{{ f['id'] }}" class="share-drawer">
+                        <form action="{{ url_for('create_share', file_id=f['id']) }}" method="post">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                          <div class="share-form-grid">
+                            <div>
+                              <label class="form-label">Share Method</label>
+                              <select class="form-select" name="share_mode" onchange="toggleRecipientInput(this, '{{ f['id'] }}')">
+                                <option value="link">Expiring Link</option>
+                                <option value="user">Registered User</option>
+                              </select>
+                            </div>
+
+                            <div id="recipient-wrap-{{ f['id'] }}" style="display:none;">
+                              <label class="form-label">Recipient Username</label>
+                              <input class="form-input" type="text" name="recipient_username" list="operators-list" placeholder="e.g. sam_lee">
+                            </div>
+
+                            <div id="passcode-wrap-{{ f['id'] }}">
+                              <label class="form-label">Passcode (Optional)</label>
+                              <input class="form-input" type="password" name="passcode" placeholder="Optional PIN">
+                            </div>
+
+                            <div>
+                              <label class="form-label">Expiration</label>
+                              <select class="form-select" name="expiry_hours">
+                                <option value="1">1 Hour</option>
+                                <option value="24" selected>24 Hours</option>
+                                <option value="168">7 Days</option>
+                                <option value="0">Never</option>
+                              </select>
+                            </div>
+
+                            <div>
+                              <label class="form-label">Max Downloads (0=∞)</label>
+                              <input class="form-input" type="number" name="max_downloads" value="0" min="0" max="1000">
+                            </div>
+
+                            <div>
+                              <button type="submit" class="btn btn-primary btn-sm btn-full">Share</button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state">
+            No files found. Use the upload panel on the left to encrypt and store your first file.
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <datalist id="operators-list">
+      {% for u in other_users %}
+        <option value="{{ u['username'] }}"></option>
+      {% endfor %}
+    </datalist>
+
+    <!-- INBOUND PEER SHARES -->
+    <section class="hud-panel">
+      <div class="panel-header">
+        <div class="panel-title">Shared With Me</div>
+        <span class="file-meta-mono">Real-time incoming files</span>
+      </div>
+
+      <div id="shared-with-me-container">
+        {% if shared_with_me %}
+          <div class="table-wrap">
+            <table class="hud-table">
+              <thead>
+                <tr>
+                  <th>File Name</th>
+                  <th>Shared By</th>
+                  <th>Classification</th>
+                  <th>Size</th>
+                  <th>SHA-256</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in shared_with_me %}
+                  <tr>
+                    <td><span class="file-name">{{ item['original_name'] }}</span></td>
+                    <td class="file-meta-mono" style="color:var(--accent);">{{ item['owner_username'] }}</td>
+                    <td><span class="badge badge-{{ item['category_tag'] }}">{{ item['category_tag'] }}</span></td>
+                    <td class="file-meta-mono">{{ item['size']|human_size }}</td>
+                    <td class="file-meta-mono">{{ item['sha256_hash'][:12] }}&hellip;</td>
+                    <td>
+                      <a href="{{ url_for('download_peer_share', share_id=item['share_id']) }}" class="btn btn-primary btn-sm">
+                        Download
+                      </a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="empty-state">
+            No files have been shared with your account yet. When another user shares a file with you, it will appear here automatically.
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- SECURITY AUDIT LOG -->
+    <section class="hud-panel">
+      <div class="panel-header">
+        <div class="panel-title">Security &amp; Activity Log</div>
+        <span class="file-meta-mono" id="audit-count-label">Latest {{ audit_events|length }} events</span>
+      </div>
+
+      <div id="audit-feed-container">
+        {% if audit_events %}
+          <div class="audit-feed">
+            {% for ev in audit_events %}
+              <div class="audit-item sev-{{ ev['severity'] }}">
+                <div>
+                  <span class="audit-event-tag">{{ ev['event_type'] }}</span>
+                  <span>{{ ev['details'] }}</span>
+                </div>
+                <div class="audit-time">
+                  {{ ev['ip_address'] }} &bull; {{ ev['created_at'][11:19] }} UTC
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty-state">No recent security events recorded.</div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+let currentSyncVersion = "{{ initial_version }}";
+const csrfToken = document.getElementById('global-csrf-token') ? document.getElementById('global-csrf-token').value : '';
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function showLiveToast(message, category = 'success') {
+  const container = document.getElementById('live-toast-container');
+  if (!container) return;
+  container.style.display = 'flex';
+  const banner = document.createElement('div');
+  banner.className = `flash-banner ${category}`;
+  banner.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" class="flash-close" onclick="this.parentElement.remove()">✕</button>`;
+  container.prepend(banner);
+  setTimeout(() => {
+    if (banner.parentElement) banner.remove();
+  }, 5000);
+}
+
+// 1. Instant AJAX Upload without full page reload
+const uploadForm = document.getElementById('upload-form');
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+const selectedName = document.getElementById('selected-filename');
+const uploadBtn = document.getElementById('upload-submit-btn');
+
+if (dropzone && fileInput) {
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) {
+      const f = fileInput.files[0];
+      selectedName.style.display = 'inline-block';
+      selectedName.textContent = `Selected: ${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
+    }
+  });
+
+  ['dragenter', 'dragover'].forEach(evt => {
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+  });
+
+  ['dragleave', 'drop'].forEach(evt => {
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+    });
+  });
+
+  dropzone.addEventListener('drop', e => {
+    if (e.dataTransfer.files.length > 0) {
+      fileInput.files = e.dataTransfer.files;
+      const f = fileInput.files[0];
+      selectedName.style.display = 'inline-block';
+      selectedName.textContent = `Selected: ${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
+    }
+  });
+}
+
+if (uploadForm) {
+  uploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!fileInput.files.length) return;
+    const formData = new FormData(uploadForm);
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Encrypting & Uploading...';
+    try {
+      const res = await fetch(uploadForm.action, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: formData
+      });
+      const data = await res.json();
+      if (data.ok && data.state) {
+        showLiveToast(data.message, 'success');
+        uploadForm.reset();
+        selectedName.style.display = 'none';
+        applyLiveState(data.state);
+      } else {
+        showLiveToast(data.error || 'Upload failed.', 'error');
+      }
+    } catch (err) {
+      uploadForm.submit(); // Fallback to standard submit
+    } finally {
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = 'Encrypt & Upload File';
+    }
+  });
+}
+
+// 2. Render Live State Updates into DOM without disrupting open Share Drawers
+function isAnyShareDrawerOpen() {
+  return document.querySelectorAll('.share-drawer.open').length > 0;
+}
+
+function applyLiveState(state) {
+  if (!state || !state.version) return;
+  const clockEl = document.getElementById('live-sync-clock');
+  if (clockEl && state.server_time) {
+    clockEl.textContent = `Live synced at ${state.server_time}`;
+  }
+  if (state.version === currentSyncVersion) return;
+  currentSyncVersion = state.version;
+
+  // Update KPI metrics
+  if (state.metrics) {
+    document.getElementById('kpi-files-count').textContent = state.metrics.files_count;
+    document.getElementById('kpi-used-human').textContent = state.metrics.used_human;
+    document.getElementById('kpi-quota-human').textContent = state.metrics.quota_human;
+    document.getElementById('kpi-quota-bar').style.width = state.metrics.quota_pct + '%';
+    document.getElementById('kpi-my-shares-count').textContent = state.metrics.my_shares_count;
+    document.getElementById('kpi-shared-with-me-count').textContent = state.metrics.shared_with_me_count;
+    document.getElementById('outbound-shares-badge').textContent = `${state.metrics.my_shares_count} active`;
+  }
+
+  // Update "Shared With Me" table immediately when someone shares or uploads a file to this user
+  const sharedContainer = document.getElementById('shared-with-me-container');
+  if (sharedContainer && state.shared_with_me) {
+    if (state.shared_with_me.length === 0) {
+      sharedContainer.innerHTML = `<div class="empty-state">No files have been shared with your account yet. When another user shares a file with you, it will appear here automatically.</div>`;
+    } else {
+      const rowsHtml = state.shared_with_me.map(item => `
+        <tr>
+          <td><span class="file-name">${escapeHtml(item.original_name)}</span></td>
+          <td class="file-meta-mono" style="color:var(--accent);">${escapeHtml(item.owner_username)}</td>
+          <td><span class="badge badge-${escapeHtml(item.category_tag)}">${escapeHtml(item.category_tag)}</span></td>
+          <td class="file-meta-mono">${escapeHtml(item.human_size)}</td>
+          <td class="file-meta-mono">${escapeHtml((item.sha256_hash || '').slice(0, 12))}&hellip;</td>
+          <td>
+            <a href="/shared/${item.share_id}/download" class="btn btn-primary btn-sm">Download</a>
+          </td>
+        </tr>
+      `).join('');
+      sharedContainer.innerHTML = `
+        <div class="table-wrap">
+          <table class="hud-table">
+            <thead>
+              <tr>
+                <th>File Name</th>
+                <th>Shared By</th>
+                <th>Classification</th>
+                <th>Size</th>
+                <th>SHA-256</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>`;
+    }
+  }
+
+  // Update "My Encrypted Files" table if no share drawer is currently being typed into
+  const searchVal = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
+  const tagVal = (document.getElementById('tag-select')?.value || '').trim().toUpperCase();
+  if (!isAnyShareDrawerOpen() && state.files) {
+    const filteredFiles = state.files.filter(f => {
+      const matchesQ = !searchVal || f.original_name.toLowerCase().includes(searchVal) || (f.sha256_hash || '').toLowerCase().includes(searchVal);
+      const matchesTag = !tagVal || f.category_tag === tagVal;
+      return matchesQ && matchesTag;
+    });
+    const filesContainer = document.getElementById('my-files-container');
+    if (filesContainer) {
+      if (filteredFiles.length === 0) {
+        filesContainer.innerHTML = `<div class="empty-state">No files found. Use the upload panel on the left to encrypt and store your first file.</div>`;
+      } else {
+        const fileRows = filteredFiles.map(f => `
+          <tr>
+            <td>
+              <div class="file-title-cell">
+                <span class="file-name">${escapeHtml(f.original_name)}</span>
+                <span class="file-meta-mono">${escapeHtml((f.uploaded_at || '').slice(0, 19).replace('T', ' '))} UTC &bull; ${f.download_count} downloads</span>
+              </div>
+            </td>
+            <td><span class="badge badge-${escapeHtml(f.category_tag)}">${escapeHtml(f.category_tag)}</span></td>
+            <td class="file-meta-mono">${escapeHtml(f.human_size)}</td>
+            <td>
+              ${f.sha256_hash ? `<span class="hash-chip" title="Click to copy full SHA-256: ${escapeHtml(f.sha256_hash)}" onclick="copyHash('${escapeHtml(f.sha256_hash)}', this)">${escapeHtml(f.sha256_hash.slice(0, 12))}&hellip; Copy</span>` : `<span class="file-meta-mono">Unindexed</span>`}
+            </td>
+            <td>
+              <div class="action-cluster">
+                <a href="/files/${f.id}/download" class="btn btn-outline btn-sm">Download</a>
+                <form action="/files/${f.id}/verify" method="post" style="display:inline;">
+                  <input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}">
+                  <button type="submit" class="btn btn-emerald btn-sm">Verify</button>
+                </form>
+                <button type="button" class="btn btn-outline btn-sm" onclick="toggleShareDrawer('share-drawer-${f.id}')">Share</button>
+                <form action="/files/${f.id}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete ${escapeHtml(f.original_name)} permanently?');">
+                  <input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}">
+                  <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                </form>
+              </div>
+              <div id="share-drawer-${f.id}" class="share-drawer">
+                <form action="/files/${f.id}/share" method="post">
+                  <input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}">
+                  <div class="share-form-grid">
+                    <div>
+                      <label class="form-label">Share Method</label>
+                      <select class="form-select" name="share_mode" onchange="toggleRecipientInput(this, '${f.id}')">
+                        <option value="link">Expiring Link</option>
+                        <option value="user">Registered User</option>
+                      </select>
+                    </div>
+                    <div id="recipient-wrap-${f.id}" style="display:none;">
+                      <label class="form-label">Recipient Username</label>
+                      <input class="form-input" type="text" name="recipient_username" list="operators-list" placeholder="e.g. sam_lee">
+                    </div>
+                    <div id="passcode-wrap-${f.id}">
+                      <label class="form-label">Passcode (Optional)</label>
+                      <input class="form-input" type="password" name="passcode" placeholder="Optional PIN">
+                    </div>
+                    <div>
+                      <label class="form-label">Expiration</label>
+                      <select class="form-select" name="expiry_hours">
+                        <option value="1">1 Hour</option>
+                        <option value="24" selected>24 Hours</option>
+                        <option value="168">7 Days</option>
+                        <option value="0">Never</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="form-label">Max Downloads (0=∞)</label>
+                      <input class="form-input" type="number" name="max_downloads" value="0" min="0" max="1000">
+                    </div>
+                    <div>
+                      <button type="submit" class="btn btn-primary btn-sm btn-full">Share</button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </td>
+          </tr>
+        `).join('');
+        filesContainer.innerHTML = `
+          <div class="table-wrap">
+            <table class="hud-table">
+              <thead>
+                <tr>
+                  <th>File Name</th>
+                  <th>Classification</th>
+                  <th>Size</th>
+                  <th>SHA-256 Checksum</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>${fileRows}</tbody>
+            </table>
+          </div>`;
+      }
+    }
+  }
+
+  // Update Outbound Shares
+  const mySharesContainer = document.getElementById('my-shares-container');
+  if (mySharesContainer && state.my_shares) {
+    if (state.my_shares.length === 0) {
+      mySharesContainer.innerHTML = `<div class="empty-state">No active shares yet. Click "Share" on any uploaded file to share with another user or generate an expiring link.</div>`;
+    } else {
+      const shareItems = state.my_shares.map(s => `
+        <div class="audit-item sev-SUCCESS" style="flex-direction: column; gap: 0.4rem;">
+          <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+            <strong style="color:var(--text-primary);">${escapeHtml(s.original_name)}</strong>
+            <form action="/shares/${s.id}/revoke" method="post" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}">
+              <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
+            </form>
+          </div>
+          <div class="file-meta-mono">
+            ${s.recipient_username
+              ? `Shared with: <strong style="color:var(--accent);">${escapeHtml(s.recipient_username)}</strong>`
+              : `Link: <a href="/s/${escapeHtml(s.share_token)}" target="_blank">/s/${escapeHtml((s.share_token || '').slice(0, 10))}&hellip;</a> ${s.has_passcode ? '<span class="badge badge-CONFIDENTIAL">Passcode</span>' : ''}`
+            }
+            &bull; Downloads: ${s.download_count}${s.max_downloads > 0 ? '/' + s.max_downloads : ''}
+          </div>
+        </div>
+      `).join('');
+      mySharesContainer.innerHTML = `<div class="audit-feed">${shareItems}</div>`;
+    }
+  }
+
+  // Update Audit Feed
+  const auditContainer = document.getElementById('audit-feed-container');
+  const auditCountLabel = document.getElementById('audit-count-label');
+  if (auditContainer && state.audit_events) {
+    if (auditCountLabel) auditCountLabel.textContent = `Latest ${state.audit_events.length} events`;
+    if (state.audit_events.length === 0) {
+      auditContainer.innerHTML = `<div class="empty-state">No recent security events recorded.</div>`;
+    } else {
+      const eventsHtml = state.audit_events.map(ev => `
+        <div class="audit-item sev-${escapeHtml(ev.severity)}">
+          <div>
+            <span class="audit-event-tag">${escapeHtml(ev.event_type)}</span>
+            <span>${escapeHtml(ev.details)}</span>
+          </div>
+          <div class="audit-time">${escapeHtml(ev.ip_address)} &bull; ${escapeHtml((ev.created_at || '').slice(11, 19))} UTC</div>
+        </div>
+      `).join('');
+      auditContainer.innerHTML = `<div class="audit-feed">${eventsHtml}</div>`;
+    }
+  }
+}
+
+// 3. Connect to Server-Sent Events (/api/stream) + Polling Fallback + Page Show / Tab Focus Refresh
+async function fetchLiveStateNow() {
+  try {
+    const res = await fetch("{{ url_for('api_live_state') }}", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      applyLiveState(data);
+    }
+  } catch (e) {
+    // Silent retry on next cycle
+  }
+}
+
+if (window.EventSource) {
+  const es = new EventSource("{{ url_for('api_stream') }}");
+  es.onmessage = (event) => {
+    try {
+      const state = JSON.parse(event.data);
+      applyLiveState(state);
+    } catch (e) {}
+  };
+}
+
+// Periodic fallback poll every 3 seconds + instant sync when user enters/focuses page or hits Back button
+setInterval(fetchLiveStateNow, 3000);
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) {
+    window.location.reload();
+  } else {
+    fetchLiveStateNow();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    fetchLiveStateNow();
+  }
+});
+
+function toggleShareDrawer(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
+
+function toggleRecipientInput(selectEl, fileId) {
+  const recWrap = document.getElementById('recipient-wrap-' + fileId);
+  const passWrap = document.getElementById('passcode-wrap-' + fileId);
+  if (selectEl.value === 'user') {
+    recWrap.style.display = 'block';
+    passWrap.style.display = 'none';
+  } else {
+    recWrap.style.display = 'none';
+    passWrap.style.display = 'block';
+  }
+}
+
+function copyHash(hash, el) {
+  navigator.clipboard.writeText(hash).then(() => {
+    const original = el.textContent;
+    el.textContent = 'Copied ✓';
+    setTimeout(() => { el.textContent = original; }, 1400);
+  });
+}
+</script>
+{% endblock %}

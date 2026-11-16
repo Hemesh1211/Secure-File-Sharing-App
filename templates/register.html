@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Create Account // SecureShare{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="auth-card">
+    <div class="auth-header">
+      <div class="auth-eyebrow">ACCOUNT REGISTRATION</div>
+      <h1 class="auth-title">Create your account</h1>
+      <p class="panel-subtitle" style="margin-top: 0.35rem;">
+        Passwords are salted and hashed before storage.
+      </p>
+    </div>
+
+    <form method="post" action="{{ url_for('register') }}" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="form-group">
+        <label class="form-label" for="username">Username (3–40 letters or numbers)</label>
+        <input class="form-input" type="text" id="username" name="username" minlength="3" maxlength="40" pattern="[A-Za-z0-9]+" required autofocus placeholder="e.g. jordan01">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password (minimum 12 characters)</label>
+        <input class="form-input" type="password" id="password" name="password" minlength="12" required placeholder="At least 12 characters" oninput="updateStrength(this.value)">
+        <div class="strength-meter">
+          <div id="strength-bar" class="strength-meter-bar"></div>
+        </div>
+        <div id="strength-label" class="file-meta-mono" style="margin-top: 0.35rem;">
+          Password strength: enter at least 12 characters
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-full" style="margin-top: 0.5rem;">
+        Create Account
+      </button>
+    </form>
+
+    <div style="margin-top: 1.25rem; text-align: center; font-size: 0.82rem; color: var(--text-secondary);">
+      Already have an account? <a href="{{ url_for('login') }}">Sign in</a>
+    </div>
+  </div>
+</div>
+
+<script>
+function updateStrength(val) {
+  const bar = document.getElementById('strength-bar');
+  const label = document.getElementById('strength-label');
+  let score = 0;
+  if (val.length >= 12) score += 40;
+  if (val.length >= 16) score += 20;
+  if (/[A-Z]/.test(val) && /[a-z]/.test(val)) score += 15;
+  if (/[0-9]/.test(val)) score += 10;
+  if (/[^A-Za-z0-9]/.test(val)) score += 15;
+  score = Math.min(100, score);
+  bar.style.width = score + '%';
+  if (val.length < 12) {
+    bar.style.backgroundColor = '#dc2626';
+    label.textContent = `Length: ${val.length}/12 required characters`;
+  } else if (score < 70) {
+    bar.style.backgroundColor = '#d97706';
+    label.textContent = 'Strength: Moderate (add numbers or symbols)';
+  } else {
+    bar.style.backgroundColor = '#059669';
+    label.textContent = 'Strength: Strong';
+  }
+}
+</script>
+{% endblock %}

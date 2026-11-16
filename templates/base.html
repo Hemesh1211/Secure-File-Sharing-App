@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="cobalt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}SecureShare // Encrypted File Workspace{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    (function() {
+      const saved = localStorage.getItem('secureshare_palette') || 'cobalt';
+      document.documentElement.setAttribute('data-theme', saved);
+    })();
+  </script>
+</head>
+<body>
+  <header class="hud-topbar">
+    <div class="hud-topbar-inner">
+      <a href="{{ url_for('home') }}" class="brand-cluster" style="text-decoration: none;">
+        <div class="brand-emblem">SS</div>
+        <div class="brand-titles">
+          <div class="brand-name">
+            SecureShare
+            <span class="brand-badge">AES-256-GCM</span>
+          </div>
+          <div class="brand-sub">Encrypted File Sharing &amp; Integrity Verification</div>
+        </div>
+      </a>
+
+      <div class="hud-status-strip">
+        <div class="telemetry-pill">
+          <span class="pulse-dot"></span>
+          <span>Cipher: <strong>AES-256-GCM</strong></span>
+        </div>
+        <div class="telemetry-pill">
+          <span>KDF: <strong>HKDF-SHA256</strong></span>
+        </div>
+        <div class="telemetry-pill">
+          <span>Integrity: <strong>SHA-256</strong></span>
+        </div>
+      </div>
+
+      <div class="operator-controls">
+        <div class="palette-switcher" title="Switch minimal accent palette">
+          <button type="button" class="palette-dot" data-palette="cobalt" style="background:#2563eb;" onclick="setPalette('cobalt')" title="Nordic Cobalt"></button>
+          <button type="button" class="palette-dot" data-palette="emerald" style="background:#059669;" onclick="setPalette('emerald')" title="Sage Emerald"></button>
+          <button type="button" class="palette-dot" data-palette="violet" style="background:#4f46e5;" onclick="setPalette('violet')" title="Royal Indigo"></button>
+          <button type="button" class="palette-dot" data-palette="graphite" style="background:#18181b;" onclick="setPalette('graphite')" title="Monochrome Graphite"></button>
+        </div>
+
+        {% if g.user %}
+          <span class="operator-tag">{{ g.user['username'] }}</span>
+          <form action="{{ url_for('logout') }}" method="post" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline btn-sm">Sign Out</button>
+          </form>
+        {% else %}
+          <a href="{{ url_for('login') }}" class="btn btn-outline btn-sm">Sign In</a>
+          <a href="{{ url_for('register') }}" class="btn btn-primary btn-sm">Create Account</a>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  <main class="hud-main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-stack">
+          {% for category, message in messages %}
+            <div class="flash-banner {{ category }}">
+              <span>{{ message }}</span>
+              <button type="button" class="flash-close" onclick="this.parentElement.remove()">✕</button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="hud-footer">
+    SecureShare Workspace &bull; AES-256-GCM Envelope Encryption &bull; SHA-256 Integrity Verification &bull; CSRF Protected
+  </footer>
+
+  <script>
+    function setPalette(themeName) {
+      document.documentElement.setAttribute('data-theme', themeName);
+      localStorage.setItem('secureshare_palette', themeName);
+      document.querySelectorAll('.palette-dot').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-palette') === themeName);
+      });
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'cobalt';
+      setPalette(current);
+    });
+  </script>
+</body>
+</html>
