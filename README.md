@@ -120,13 +120,14 @@ Secure-File-Sharing-App/
 ## 🚀 Quick Start
 
 ### 🪟 Option 1: One-Click Windows Launcher (`run_app.bat`)
-1. Open `D:\Cyber-Security-Projects\Secure-File-Sharing-App`.
+1. Open `D:\Secure-File-Sharing-App`.
 2. Double-click **`run_app.bat`**.
 3. The script automatically creates `.venv`, installs `Flask`, `Flask-WTF`, and `cryptography`, generates a persistent 256-bit `.flask_secret_key`, initializes `instance/app.sqlite3`, and starts the multithreaded server at **`http://127.0.0.1:5000`**.
 
 ### 💻 Option 2: Manual PowerShell Setup
 ```powershell
-cd D:\Cyber-Security-Projects\Secure-File-Sharing-App
+git clone this repo first
+cd D:\Secure-File-Sharing-App
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
@@ -146,14 +147,3 @@ flask --app app run --host=0.0.0.0 --port=5000 --with-threads
 - [x] **Real-Time Multi-User Sync:** Open two browser windows signed into two different accounts; sharing a file from Account A immediately populates Account B's **Shared With Me** section without refreshing.
 
 ---
-
-## 🌐 Push Updated README & Screenshot to GitHub
-
-Save your screenshot as **`image_080a72.png`** inside `D:\Cyber-Security-Projects\Secure-File-Sharing-App\`, then run:
-
-```powershell
-cd D:\Cyber-Security-Projects\Secure-File-Sharing-App
-git add README.md image_080a72.png app.py requirements.txt run_app.bat static/ templates/
-git commit -m "Redesign SecureShare UI with AES-256-GCM, live SSE sync, and result screenshot"
-git push origin main
-```
